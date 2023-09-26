@@ -12,6 +12,14 @@ import xformers.ops.fmha.attn_bias
 from transformers import LlamaForCausalLM
 from typing import List, Dict, Tuple
 
+import logging as flog
+import os
+import time
+flog.basicConfig(filename="logs.log",
+                 filemode='a',
+                 format='%(message)s',
+                 level=flog.DEBUG)
+
 
 def precompute_rope_angle(dim: int, seq_len: int, device: str, theta: float = 10000.0) -> Tuple[torch.Tensor, torch.Tensor]:
     angles = 1.0 / (theta ** (torch.arange(0, dim, 2).to(device)
@@ -138,11 +146,20 @@ class Linear():
     def forward(self, data: torch.Tensor, input_args: MultiLoraBatchData) -> torch.Tensor:
         # data shape is: batch_size * max_seq_len * dim
         # result = data @ self.weight_.transpose(0, 1)
+        torch.cuda.reset_peak_memory_stats()
+        base_start_time = time.time()
         result = self.weight_.forward(data)
+        base_end_time = time.time()
+        device_str = data.device
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_utilization = torch.cuda.utilization(int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(f"base: {(base_end_time-base_start_time):.10f} {alloc_mem} {gpu_utilization}")
 
         if not self.enable_lora_:
             return result
 
+        torch.cuda.reset_peak_memory_stats()
+        lora_start_time = time.time()
         for lora_config in input_args.lora_batch_data_config_:
             adapter_name = lora_config.adapter_name_
             start_idx = lora_config.batch_start_idx_
@@ -153,6 +170,10 @@ class Linear():
 
             result[start_idx: end_idx] += self.loras_[
                 adapter_name].forward(data[start_idx:end_idx])
+        lora_end_time = time.time()
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_utilization = torch.cuda.utilization(int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(f"lora: {(lora_end_time-lora_start_time):.10f} {alloc_mem} {gpu_utilization}")
 
         return result
 
@@ -341,9 +362,12 @@ class LlamaModel():
             return tokens
 
         # only for train
-
+        flog.info(f"data size: {tokens.shape[0]} {tokens.shape[1]}")
         data = F.embedding(tokens, self.token_embedding_,
                            padding_idx=self.pad_token_id_).requires_grad_(True)
+
+        torch.cuda.reset_peak_memory_stats()
+        forward_start_time = time.time()
 
         def create_forward_for_checkpoint(module: Transformer):
             def forward_for_checkpoint(*inputs):
@@ -357,6 +381,14 @@ class LlamaModel():
 
         data = self.norm_.forward(data)
         data @= self.output_.transpose(0, 1)
+
+        forward_end_time = time.time()
+        device_str = tokens.device
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_uilization = torch.cuda.utilization(
+            int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(
+            f"forward: {(forward_end_time - forward_start_time):.10f} {alloc_mem} {gpu_uilization}")
 
         return data
 
