@@ -11,6 +11,14 @@ import xformers.ops.fmha.attn_bias
 from transformers import AutoModel
 from typing import List, Dict, Optional, Tuple
 
+import logging as flog
+import os
+import time
+flog.basicConfig(filename="logs.log",
+                 filemode='a',
+                 format='%(message)s',
+                 level=flog.DEBUG)
+
 
 def swiglu(x: torch.Tensor) -> torch.Tensor:
     x = torch.chunk(x, 2, dim=-1)
@@ -157,11 +165,15 @@ class ChatGLMModel(LLMModel):
             return forward_for_checkpoint
 
         # batch_size, seq_len, dim
+        flog.info(f"data size: {tokens.shape[0]} {tokens.shape[1]}")
         data = F.embedding(tokens, self.token_embedding_,
                            padding_idx=self.pad_token_id_).requires_grad_(True)
         mask = precompute_mask(input, self.n_heads_, self.device_, data.dtype)
 
         rope_angle = self.rope_angle_.forward(tokens.shape[1])
+
+        torch.cuda.reset_peak_memory_stats()
+        forward_start_time = time.time()
         for layer in self.layers_:
             if input.inference_model_:
                 data = layer.forward(data, mask, rope_angle, input)
@@ -171,6 +183,13 @@ class ChatGLMModel(LLMModel):
 
         data = self.norm_.forward(data)
         data @= self.output_.transpose(0, 1)
+        forward_end_time = time.time()
+        device_str = tokens.device
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_uilization = torch.cuda.utilization(
+            int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(
+            f"forward: {(forward_end_time - forward_start_time):.10f} {alloc_mem} {gpu_uilization}")
 
         return data
 
@@ -182,7 +201,7 @@ class ChatGLMModel(LLMModel):
                         double_quant: bool = True,
                         quant_type: str = 'nf4',
                         log_fn=None):
-        # now only support the qlora - 4bit
+        # now only support the qlora - 8bit
         if bits in [4, 8]:
             if log_fn is not None:
                 log_fn('Loading model with quantization, bits = %i' % bits)
@@ -200,7 +219,7 @@ class ChatGLMModel(LLMModel):
                     bnb_4bit_compute_dtype=compute_dtype,
                     bnb_4bit_use_double_quant=double_quant,
                     bnb_4bit_quant_type=quant_type,
-                ),
+                ) if bits == 4 else None,
                 torch_dtype=(torch.float32 if fp16 else (torch.bfloat16 if bf16 else torch.float32)))
         else:
             chatglm_model = AutoModel.from_pretrained(

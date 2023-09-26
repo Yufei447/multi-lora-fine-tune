@@ -46,6 +46,6 @@ class MultiLoraBatchData:
     expand_side_: List[str] = None
 
     batch_tokens_: List[Tokens] = None
-    tokens_len_without_pad_: Tokens = None
+    tokens_len_without_pad_: List[int] = None
 
     inference_model_: bool = False

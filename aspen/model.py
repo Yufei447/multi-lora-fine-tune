@@ -27,6 +27,7 @@ def precompute_mask(input: MultiLoraBatchData,
             mask[idx] += torch.tensor([float("-inf")] * inf_len + [0] * zero_len).expand(
                 input.batch_seq_len_, input.batch_seq_len_).cuda(device)
 
+    mask.requires_grad_(False)
     return mask.to(dtype)
 
 
@@ -130,6 +131,7 @@ class RotaryEmbedding(torch.nn.Module):
         # this is to mimic the behaviour of complex32, else we will get different results
         if dtype in (torch.float16, torch.bfloat16, torch.int8):
             cache = cache.bfloat16() if dtype == torch.bfloat16 else cache.half()
+        cache.requires_grad_(False)
         return cache
 
     def forward(self, max_seq_len, offset=0):

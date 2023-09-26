@@ -24,6 +24,14 @@ import datetime
 import argparse
 from typing import Dict, Tuple, List
 
+import logging as flog
+import os
+import time
+flog.basicConfig(filename="logs.log",
+                 filemode='a',
+                 format='%(message)s',
+                 level=flog.DEBUG)
+
 # Command Line Arguments
 parser = argparse.ArgumentParser(description='ASPEN main program')
 parser.add_argument('--base_model', type=str,
@@ -182,6 +190,8 @@ def train(config: Dict[str, any], llm_model: aspen.LLMModel, dispatcher: aspen.D
         input: aspen.MultiLoraBatchData = dispatcher.get_train_data()
         for lora in input.lora_batch_data_config_:
             all_optimizer[lora.adapter_name_].zero_grad()
+        print(
+            f"    data size: {len(input.batch_tokens_)} * {len(input.batch_tokens_[0])}")
 
         step_cnt += 1
 
@@ -189,6 +199,8 @@ def train(config: Dict[str, any], llm_model: aspen.LLMModel, dispatcher: aspen.D
         labels = torch.tensor(input.batch_tokens_,
                               dtype=torch.long).to(args.device)
 
+        torch.cuda.reset_peak_memory_stats()
+        loss_start_time = time.time()
         total_loss = None
         for lora_config in input.lora_batch_data_config_:
             start_idx = lora_config.batch_start_idx_
@@ -201,15 +213,38 @@ def train(config: Dict[str, any], llm_model: aspen.LLMModel, dispatcher: aspen.D
                 accumulation_step[lora_config.adapter_name_]
             print(
                 f"    adapter: {lora_config.adapter_name_} loss: {loss}")
+            flog.info(f"train: {loss}")
             if total_loss is None:
                 total_loss = loss
             else:
                 total_loss += loss
+        loss_end_time = time.time()
+        device_str = output.device
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_uilization = torch.cuda.utilization(
+            int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(
+            f"loss: {(loss_end_time - loss_start_time):.10f} {alloc_mem} {gpu_uilization}")
 
+        torch.cuda.reset_peak_memory_stats()
+        back_start_time = time.time()
         total_loss.backward()
+        back_end_time = time.time()
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_utilization = torch.cuda.utilization(int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(f"backward: {(back_end_time - back_start_time):.10f} {alloc_mem} {gpu_utilization}")
+
+        torch.cuda.reset_peak_memory_stats()
+        opti_start_time = time.time()
         for lora in input.lora_batch_data_config_:
             if step_cnt % accumulation_step[lora.adapter_name_] == 0:
                 all_optimizer[lora.adapter_name_].step()
+        opti_end_time = time.time()
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_utilization = torch.cuda.utilization(
+            int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(
+            f"optim: {(opti_end_time - opti_start_time):.10f} {alloc_mem} {gpu_utilization}")
 
         if step_cnt % config["save_step"] == 0:
             aspen.save_lora_model(llm_model, config, f"{step_cnt}")

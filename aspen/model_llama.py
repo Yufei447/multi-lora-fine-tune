@@ -12,6 +12,14 @@ import xformers.ops.fmha.attn_bias
 from transformers import LlamaForCausalLM
 from typing import List, Dict, Tuple, Optional
 
+import logging as flog
+import os
+import time
+flog.basicConfig(filename="logs.log",
+                 filemode='a',
+                 format='%(message)s',
+                 level=flog.DEBUG)
+
 
 class Transformer():
     def __init__(self, layer_id: int, args: LLMModelArgs):
@@ -143,8 +151,13 @@ class LlamaModel(LLMModel):
 
         # only for train
         mask = precompute_mask(input, self.n_heads_, self.device_)
+
+        flog.info(f"data size: {tokens.shape[0]} {tokens.shape[1]}")
         data = F.embedding(tokens, self.token_embedding_,
                            padding_idx=self.pad_token_id_).requires_grad_(True)
+
+        torch.cuda.reset_peak_memory_stats()
+        forward_start_time = time.time()
 
         def create_forward_for_checkpoint(module: Transformer):
             def forward_for_checkpoint(*inputs):
@@ -161,6 +174,13 @@ class LlamaModel(LLMModel):
 
         data = self.norm_.forward(data)
         data @= self.output_.transpose(0, 1)
+        forward_end_time = time.time()
+        device_str = tokens.device
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_uilization = torch.cuda.utilization(
+            int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(
+            f"forward: {(forward_end_time - forward_start_time):.10f} {alloc_mem} {gpu_uilization}")
 
         return data
 

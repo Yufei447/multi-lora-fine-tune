@@ -7,6 +7,14 @@ import bitsandbytes
 
 from typing import Dict, Optional
 
+import logging as flog
+import os
+import time
+flog.basicConfig(filename="logs.log",
+                 filemode='a',
+                 format='%(message)s',
+                 level=flog.DEBUG)
+
 
 class Lora():
     def __init__(self, adapter_name: str):
@@ -89,11 +97,22 @@ class Linear():
     def forward(self, data: torch.Tensor, input_args: MultiLoraBatchData) -> torch.Tensor:
         # data shape is: batch_size * max_seq_len * dim
         # result = data @ self.weight_.transpose(0, 1)
+        torch.cuda.reset_peak_memory_stats()
+        base_start_time = time.time()
         result = self.weight_.forward(data)
+        base_end_time = time.time()
+        device_str = data.device
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_utilization = torch.cuda.utilization(
+            int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(
+            f"base: {(base_end_time-base_start_time):.10f} {alloc_mem} {gpu_utilization}")
 
         if not self.enable_lora_:
             return result
 
+        torch.cuda.reset_peak_memory_stats()
+        lora_start_time = time.time()
         for lora_config in input_args.lora_batch_data_config_:
             adapter_name = lora_config.adapter_name_
             start_idx = lora_config.batch_start_idx_
@@ -104,5 +123,11 @@ class Linear():
 
             result[start_idx: end_idx] += self.loras_[
                 adapter_name].forward(data[start_idx:end_idx])
+        lora_end_time = time.time()
+        alloc_mem = torch.cuda.max_memory_allocated(device_str)
+        gpu_utilization = torch.cuda.utilization(
+            int(os.environ["CUDA_VISIBLE_DEVICES"]))
+        flog.info(
+            f"lora: {(lora_end_time-lora_start_time):.10f} {alloc_mem} {gpu_utilization}")
 
         return result
