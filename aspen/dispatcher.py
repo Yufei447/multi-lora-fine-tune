@@ -138,7 +138,7 @@ class TrainTask():
                     f"encode text data {self.adapter_name_}: {idx}/{len(lora_text_data)}")
 
         if is_train_data and self.group_by_length_:
-            ret.sort(key=lambda x: len(x.tokens_), reverse=True)
+            ret.sort(key=lambda x: len(x.tokens_))
         else:
             random.shuffle(ret)
 
@@ -158,6 +158,16 @@ class TrainTask():
         self.__load_test_data()
 
     def is_train_done(self):
+        cnt = (self.epoch_cnt_ - 1) * len(self.train_token_data_) + \
+            self.next_train_data_start_idx_
+        if self.adapter_name_ == "lora_0" and cnt >= 250 * 60:
+            return True
+        if self.adapter_name_ == "lora_1" and cnt >= 280 * 60:
+            return True
+        if self.adapter_name_ == "lora_2" and cnt >= 300 * 60:
+            return True
+        if self.adapter_name_ == "lora_3" and cnt >= 150 * 60:
+            return True
         if self.epoch_cnt_ <= self.total_epoch_num_:
             return False
         return True
