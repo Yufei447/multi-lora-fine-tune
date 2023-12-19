@@ -210,6 +210,9 @@ class LlamaModel(LLMModel):
         # only for train
         mask = precompute_mask(input, self.n_heads_, self.device_)
 
+        # the tokens shape     is batch_size * tokens_len
+        # the mask shape       is batch_size * head_num * tokens_len * tokens_len
+        # the rope angle shape is head_dim * max_len // 2
         seq_module = self.sequential_module()
 
         data = (tokens, mask, self.rope_angle_, input, True)
