@@ -7,9 +7,9 @@ from typing import List
 
 
 class Pipeline:
-    # module:   the troch.nn.Sequential module
-    # balance:  list of number of layers in each partition (gpu)
-    # chunks:   number of batch (parallelized batch)
+    # module : the troch.nn.Sequential module
+    # balance: list of number of layers in each partition (gpu)
+    # chunks : number of batch (parallelized batch)
     def __init__(self,
                  module: torch.nn.Sequential,
                  balance: List[int],
