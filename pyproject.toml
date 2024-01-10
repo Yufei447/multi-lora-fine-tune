@@ -3,23 +3,32 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aspen"
-version = "0.1"
+name = "mlora"
+version = "0.2"
 description = "A tool for fine-tuning large language models (LLMs) using the LoRA or QLoRA methods more efficiently."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Apache License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
     "torch==2.0.1",
-    "einops",
-    "xformers",
-    "transformers",
-    "bitsandbytes",
-    "sentencepiece",
+    "einops==0.6.1",
+    "datasets==2.14.5",
+    "accelerate==0.21.0",
+    "transformers==4.30.2",
+    "bitsandbytes==0.40.2",
+    "sentencepiece==0.1.99",
+    "scipy==1.10.1",
+    "protobuf==3.20.1",
+    "xformers==0.0.20",
+    "huggingface_hub",
+    "nltk",
+    "jieba",
+    "rouge",
+    "rouge_chinese"
 ]
 
 [project.urls]
@@ -27,4 +36,4 @@ dependencies = [
 "Bug Tracker" = "https://github.com/TUDB-Labs/multi-lora-fine-tune/issues"
 
 [tool.setuptools.packages.find]
-include = ["aspen"]
+include = ["mlora"]
